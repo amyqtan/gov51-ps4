@@ -1,0 +1,207 @@
+---
+title: "Gov51 Problem Set 4"
+author: "Amy Tan"
+format: pdf
+editor: visual
+---
+
+Github link: <https://github.com/amyqtan/gov51-ps4.git>
+
+## Q1.1 Load Packages & Data
+
+```{r}
+library(tidyverse) 
+library(estimatr) 
+library(modelsummary)
+
+card <- read_csv("data/raw/card1995.csv")
+```
+
+## Q1.2 Describe the data
+
+```{r}
+nrow(card)
+```
+
+There are 3010 observations in the dataset. The unit of observation appears to be a male individual.
+
+## Q1.3 Distribution of years of education
+
+```{r}
+ed_mean <- mean(card$educ, na.rm = TRUE)
+ed_mean
+
+educ_histogram <- card %>%
+  ggplot(mapping = aes(x = educ)) +  
+  geom_histogram(binwidth = 1, fill = "tomato", color = "black")  + 
+  scale_x_continuous(breaks = seq(min(card$educ), max(card$educ), by = 1)
+  ) +
+  geom_vline(xintercept = ed_mean, color = "blue") + 
+  labs(
+    x = "Years of Completed Education", 
+    y = "Number of People", 
+    title = "Distribution of Years of Completed Education in the Dataset")
+
+educ_histogram
+```
+
+The mean value for years of completed education is 13.26 years. There are spikes at 12 years (high school graduation) and 16 years (college graduation), which makes sense. These spikes can be explained because people tend to just have a high school degree (12 years) or a standard college education (16 years).
+
+## Q1.4 The naïve relationship
+
+```{r}
+educ_wage_plot <- card %>%
+  ggplot(mapping = aes(x = educ, y = lwage)) +  
+  geom_point() + 
+  scale_x_continuous(breaks = seq(min(card$educ), max(card$educ), by = 1)
+  ) +
+  labs(
+    x = "Years of Completed Education", 
+    y = "Log Wage", 
+    title = "Log Wage as a Function of Years of Completed Education") + 
+  geom_smooth(method = "lm", color = "tomato")
+
+educ_wage_plot
+```
+
+Based on this plot, there seems to be a positive education, where more education appears to be correlated with higher log wages. However, this is just correlation and not causation.
+
+## Q1.5 Why OLS might be misleading
+
+People with more education might come from families with a higher income background, or they themselves may be more hardworking. These could both be confounding effects.
+
+## Q2.1 Why OLS might be misleading
+
+```{r}
+mean(card$nearc4)
+```
+
+68.2% of respondents grew up near a four year college.
+
+## Q2.2 Relevance: does proximity affect education?
+
+```{r}
+first_stage <- lm_robust(educ ~ nearc4 + black + smsa + south + 
+                           exper + expersq + married, data = card,
+                         se_type = "HC2")
+first_stage
+```
+
+The coefficient of 0.327 on nearc4 is positive. The coefficient has a standard error of 0.0806 and a t-statistic of 4.06. The coefficient on nearc4 of 0.327 implies that for those living near college compared to those who did not, those living near the college experience 0.327 additional years of education on average, holding all else equal. Yes, the positive sign makes sense because it tells you proximity affects education attainment (closer to college means you are more likely to go to college) which makes sense.
+
+## Q2.3 Checking instrument strength
+
+```{r}
+4.0607488^2
+```
+
+The t-statistic as indicated above is 4.0607488. The first-stage F-statistic is t\^2, which is calculated as 16.48968. The instrument appears to be strong, since the F value of 16.49 \> 10. Instrument strength matters for the reliability of the 2SLS estimate because a weak instrument would not be able to explain the variation in the treatment variable. A weak instrument implies that the 2SLS is closer to the bias within the OLS model, whereas a strong instrument indicates a smaller bias in the 2SLS. The larger the F-statistic, the smaller the bias of 2SLS.
+
+## Q2.4 Exclusion restriction
+
+a\) One we control for education, the formal exclusion restriction states that the covariance between the instrument (nearc4) and the error term on the lwage term is zero.
+
+b\) Growing up near a college may mean that your family experienced greater employment benefits as a result of living near the college, which then meant that your family had a higher income, hence impacting your future wages. (Since your family having a higher income would cause you to have a higher income.) This violates the exclusion restriction because it implies that growing up near a college impacted the outcome of wages through family employment.
+
+## Q2.5 Balance check
+
+```{r}
+card0 <- card %>% filter(nearc4 == 0)
+card1 <- card %>% filter(nearc4 == 1)
+
+summarytable <- data.frame(
+  Variable = c("Black", "Smsa", "South"),
+  Control = c(mean(card0$black),
+           mean(card0$smsa),
+           mean(card0$south)),
+  Treatment = c(mean(card1$black),
+           mean(card1$smsa),
+           mean(card1$south)))
+
+  summarytable
+```
+
+On average, the groups are imbalanced. This tells us that these variables need to be controlled for in the model. The imbalance tells us that the instrument is not randomly assigned, but the validity of the instrument depends on whether or not we control these imbalanced characteristics.
+
+## Q3.1 Compute the reduced form
+
+```{r}
+reduced_form <- lm(lwage ~ nearc4 + black + smsa + south + 
+                           exper + expersq + married, data = card)
+reduced_form
+```
+
+The coefficient is for nearc4 is 0.04085, meaning that living near a college increases your wages by 4.085%. It tells us that proximity to college relates to a small increase in wages, controlling for background characteristics.
+
+## Q3.2 Calculate the Wald estimator by hand
+
+```{r}
+0.040854 / 0.327111413
+```
+
+The Wald estimator is 0.125.
+
+## Q3.3 Interpret the Wald estimator
+
+Each additional year of education causes a 12.5% increase of wages, for the compliers (those who live near a college & go to college (Z = 1 and D = 1)).
+
+## Q4.1 OLS estimate
+
+```{r}
+ols <- lm(lwage ~ educ + black + smsa + south + exper + expersq + married, data = card)
+ols
+```
+
+The coefficient is 0.0715.
+
+## Q4.2 2SLS estimate
+
+```{r}
+iv <- iv_robust(lwage ~ educ + black + smsa + south + exper + expersq + married | nearc4 + black + smsa + south + exper + expersq + married, data = card, se_type = "HC2")
+iv
+```
+
+The coefficient on educ is 0.125. This matches the Wald estimate from Section 3.2.
+
+## Q4.3 Side-by-side comparison
+
+```{r}
+modelsummary(list("OLS" = ols, "2SLS" = iv), coef_map = c("educ" = "Years of Education"), gof_map = c("nobs", "r.squared"))
+```
+
+## Q4.4 Why do OLS and 2SLS differ?
+
+a\) 2SLS is larger. 2SLS \> OLS
+
+b\) This is unusual since OLS tends to overestimate, but in this case, it is underestimating, which comes from LATE versus ATE and also measurement error. LATE is only for compliers, who live near a college & go to college (Z = 1 and D = 1). These people are more likely to come from disadvantaged backgrounds since they needed a nearby college to go to college. As a result, an increase in education for the LATE group (which is not necessarily representative of the general population) is likely to overestimate the return to education, since this group is more disadvantage. Additionally, OLS has measurement error problems coming from attenuation bias where OLS coefficients are moved towards zero. Random noise effects the estimated slope and moves it closer to zero.
+
+c\) 2SLS is more credible as a causal estimate because it is using an instrumental variable, which solves the endogeneity problem. 2SLS uses nearc4 as an exogenous instrument which isolates the variation in education.
+
+## Q4.5 Adding IQ as a control
+
+```{r}
+withiq_ols <- lm(lwage ~ educ + IQ + black + smsa + south + exper + expersq + married, data = card, se_type = "HC2")
+
+withiq_iv <- iv_robust(lwage ~ educ + IQ + black + smsa + south + exper + expersq + married | nearc4 + IQ + black + smsa + south + exper + expersq + married, data = card, se_type = "HC2")
+
+withiq_ols
+withiq_iv
+```
+
+a\) Including IQ changes the OLS measurement from 0.071 to 0.06757. Including IQ reduces the OLS coefficient on educ.
+
+b\) It does not change substantially, it changes from 0.125 to 0.109 when IQ is added.
+
+c\) It shows that 2SLS is not driven by ability bias, whereas OLS is driven by ability bias. Since IQ is serving as our proxy for ability in this case, and since it doesn't significantly change the value for 2SLS, it shows that 2SLS is not driven by ability bias. Compared to OLS, ability bias is not as large of a factor in 2SLS, showing that 2SLS has a better causal mechanism.
+
+## Q5.1 Who are the compliers?
+
+The compliers are individuals who choose to go to college or continue their education because they live near a college, who would not have went to college if they did not live near the college. These are likely first-generation or more disadvantaged individuals who only went to college because they happened to grow up near one. The compliers do not include those who would have always went to college regardless (always takers) (D=1 regardless of Z value) or those who would have never went to college regardless (never takers) (D=0 regardless of Z value).
+
+## Q5.2 Write the LATE interpretation
+
+For male students who chose to continue their education only because of their proximity to a college, each additional year of education increased their wages by 12.5%, this is estimated by using variation in education choices that is driven by college proximity.
+
+## Q5.3 External validity
+
+No, this LATE is not likely to be the same as ATE. This is because the complier group for LATE is likely to have higher returns to education than the typical person reflected in ATE because the complier group would not have normally obtained education.
